@@ -29,3 +29,8 @@ ecomm-assistant = "ecomm_prod_assistant.cli:main"
 where = ["prod_assistant"]
 include = ["ecomm_prod_assistant*"]
 
+[tool.uv.workspace]
+members = [
+    "ecomm-prod-assistant-monika",
+]
+
