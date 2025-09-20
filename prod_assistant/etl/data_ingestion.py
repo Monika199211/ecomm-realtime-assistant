@@ -64,6 +64,9 @@ class DataIngestion:
         if not expected_columns.issubset(set(df.columns)):
             raise ValueError(f"CSV must contain columns: {expected_columns}")
 
+        # Clean out-of-range float values
+        df = df.replace([float('inf'), float('-inf')], None)
+        df = df.fillna("N/A")  # Or use 0, "" as appropriate
         return df
 
     def transform_data(self):
