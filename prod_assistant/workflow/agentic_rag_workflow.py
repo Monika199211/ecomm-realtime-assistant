@@ -9,6 +9,7 @@ from prompt_library.prompts import PROMPT_REGISTRY, PromptType
 from retriever.retrieval import Retriever
 from utils.model_loader import ModelLoader
 from langgraph.checkpoint.memory import MemorySaver
+from evaluation.ragas_eval import evaluate_context_precision, evaluate_response_relevancy
 
 
 class AgenticRAG:
@@ -138,6 +139,21 @@ class AgenticRAG:
 
 
 if __name__ == "__main__":
+    
+    
     rag_agent = AgenticRAG()
     answer = rag_agent.run("What is the price of iPhone 15?")
     print("\nFinal Answer:\n", answer)
+    
+    
+    # retrieved_contexts,response = invoke_chain(user_query)
+    
+    # #this is not an actual output this have been written to test the pipeline
+    # #response="iphone 16 plus, iphone 16, iphone 15 are best phones under 1,00,000 INR."
+    
+    # context_score = evaluate_context_precision(user_query,response,retrieved_contexts)
+    # relevancy_score = evaluate_response_relevancy(user_query,response,retrieved_contexts)
+    
+    # print("\n--- Evaluation Metrics ---")
+    # print("Context Precision Score:", context_score)
+    # print("Response Relevancy Score:", relevancy_score)

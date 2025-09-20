@@ -35,7 +35,9 @@ def build_chain(query):
     retriever = retriever_obj.load_retriever()
     retrieved_docs=retriever.invoke(query)
     
-    retrieved_contexts = [format_docs(doc) for doc in retrieved_docs]
+    #retrieved_contexts = [format_docs(doc) for doc in retrieved_docs]
+    
+    retrieved_contexts = [format_docs(retrieved_docs)]
     
     llm = model_loader.load_llm()
     prompt = ChatPromptTemplate.from_template(
@@ -68,7 +70,7 @@ def invoke_chain(query: str, debug: bool = False):
 
 
 if __name__=='__main__':
-    user_query = "Can you suggest good budget iPhone under 1,00,000 INR?"
+    user_query = "Can you suggest good budget iPhone with good rating?"
      
     #retriever_obj = Retriever()
     
