@@ -19,5 +19,6 @@ langgraph==0.6.7
 ragas
 mcp
 langchain-mcp-adapters
+ddgs
 
 -e .

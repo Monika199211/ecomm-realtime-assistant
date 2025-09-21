@@ -1,20 +1,14 @@
 import os
 from langchain_astradb import AstraDBVectorStore
-from typing import List
-from langchain_core.documents import Document
 from utils.config_loader import load_config
 from utils.model_loader import ModelLoader
 from dotenv import load_dotenv
-import sys
-from pathlib import Path
-
 from langchain.retrievers.document_compressors import LLMChainFilter
 from langchain.retrievers import ContextualCompressionRetriever
 from evaluation.ragas_eval import evaluate_context_precision, evaluate_response_relevancy
-
 # Add the project root to the Python path for direct script execution
-project_root = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(project_root))
+# project_root = Path(__file__).resolve().parents[2]
+# sys.path.insert(0, str(project_root))
 
 class Retriever:
     def __init__(self):
@@ -24,7 +18,7 @@ class Retriever:
         self.config=load_config()
         self._load_env_variables()
         self.vstore = None
-        self.retriever = None
+        self.retriever_instance = None
     
     def _load_env_variables(self):
         """_summary_
@@ -56,7 +50,7 @@ class Retriever:
                 token=self.db_application_token,
                 namespace=self.db_keyspace,
                 )
-        if not self.retriever:
+        if not self.retriever_instance:
             top_k = self.config["retriever"]["top_k"] if "retriever" in self.config else 3
             
             mmr_retriever=self.vstore.as_retriever(
@@ -72,12 +66,12 @@ class Retriever:
             
             compressor=LLMChainFilter.from_llm(llm)
             
-            self.retriever = ContextualCompressionRetriever(
+            self.retriever_instance = ContextualCompressionRetriever(
                 base_compressor=compressor, 
                 base_retriever=mmr_retriever
             )
             
-        return self.retriever
+        return self.retriever_instance
             
     def call_retriever(self,query):
         """_summary_
