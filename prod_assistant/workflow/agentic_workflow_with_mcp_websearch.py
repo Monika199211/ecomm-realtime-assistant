@@ -11,10 +11,11 @@ from utils.model_loader import ModelLoader
 from langgraph.checkpoint.memory import MemorySaver
 import asyncio
 from evaluation.ragas_eval import evaluate_context_precision, evaluate_response_relevancy
+from langchain_mcp_adapters.client import MultiServerMCPClient
 
 
 class AgenticRAG:
-    """Agentic RAG pipeline using LangGraph."""
+    """Agentic RAG pipeline using LangGraph + MCP (Retriever + WebSearch)."""
 
     class AgentState(TypedDict):
         messages: Annotated[Sequence[BaseMessage], add_messages]
@@ -24,24 +25,20 @@ class AgenticRAG:
         self.model_loader = ModelLoader()
         self.llm = self.model_loader.load_llm()
         self.checkpointer = MemorySaver()
+
+        # MCP Client Init
+        self.mcp_client = MultiServerMCPClient({
+            "hybrid_search": {
+                "command": "python",
+                "args": ["prod_assistant/mcp_servers/product_search_server.py"],  # server with retriever+websearch
+                "transport": "stdio"
+            }
+        })
+        # Load MCP tools
+        self.mcp_tools = asyncio.run(self.mcp_client.get_tools())
+
         self.workflow = self._build_workflow()
         self.app = self.workflow.compile(checkpointer=self.checkpointer)
-
-    # ---------- Helpers ----------
-    def _format_docs(self, docs) -> str:
-        if not docs:
-            return "No relevant documents found."
-        formatted_chunks = []
-        for d in docs:
-            meta = d.metadata or {}
-            formatted = (
-                f"Title: {meta.get('product_title', 'N/A')}\n"
-                f"Price: {meta.get('price', 'N/A')}\n"
-                f"Rating: {meta.get('rating', 'N/A')}\n"
-                f"Reviews:\n{d.page_content.strip()}"
-            )
-            formatted_chunks.append(formatted)
-        return "\n\n---\n\n".join(formatted_chunks)
 
     # ---------- Nodes ----------
     def _ai_assistant(self, state: AgentState):
@@ -59,13 +56,22 @@ class AgenticRAG:
             response = chain.invoke({"question": last_message})
             return {"messages": [HumanMessage(content=response)]}
 
+
+
     def _vector_retriever(self, state: AgentState):
-        
-        print("--- RETRIEVER ---")
+        print("--- RETRIEVER (MCP) ---")
         query = state["messages"][-1].content
-        retriever = self.retriever_obj.load_retriever()
-        docs = retriever.invoke(query)
-        context = self._format_docs(docs)
+        tool = next(t for t in self.mcp_tools if t.name == "get_product_info")
+        result = asyncio.run(tool.ainvoke({"query": query}))
+        context = result if result else "No data"
+        return {"messages": [HumanMessage(content=context)]}
+
+    def _web_search(self, state: AgentState):
+        print("--- WEB SEARCH (MCP) ---")
+        query = state["messages"][-1].content
+        tool = next(t for t in self.mcp_tools if t.name == "web_search")
+        result = asyncio.run(tool.ainvoke({"query": query}))
+        context = result if result else "No data from web"
         return {"messages": [HumanMessage(content=context)]}
 
     def _grade_documents(self, state: AgentState) -> Literal["generator", "rewriter"]:
@@ -96,10 +102,14 @@ class AgenticRAG:
     def _rewrite(self, state: AgentState):
         print("--- REWRITE ---")
         question = state["messages"][0].content
-        new_q = self.llm.invoke(
-            [HumanMessage(content=f"Rewrite the query to be clearer: {question}")]
+        prompt = ChatPromptTemplate.from_template(
+            "Rewrite this user query to make it more clear and specific for a search engine. "
+            "Do NOT answer the query. Only rewrite it.\n\nQuery: {question}\nRewritten Query:"
         )
-        return {"messages": [HumanMessage(content=new_q.content)]}
+        chain = prompt | self.llm | StrOutputParser()
+        new_q = chain.invoke({"question": question})
+        return {"messages": [HumanMessage(content=new_q.strip())]}
+
 
     # ---------- Build Workflow ----------
     def _build_workflow(self):
@@ -108,6 +118,7 @@ class AgenticRAG:
         workflow.add_node("Retriever", self._vector_retriever)
         workflow.add_node("Generator", self._generate)
         workflow.add_node("Rewriter", self._rewrite)
+        workflow.add_node("WebSearch", self._web_search)
 
         workflow.add_edge(START, "Assistant")
         workflow.add_conditional_edges(
@@ -121,41 +132,23 @@ class AgenticRAG:
             {"generator": "Generator", "rewriter": "Rewriter"},
         )
         workflow.add_edge("Generator", END)
-        workflow.add_edge("Rewriter", "Assistant")
+
+        # New path: Rewriter → WebSearch → END
+        workflow.add_edge("Rewriter", "WebSearch")
+        workflow.add_edge("WebSearch", "Assistant")
+        workflow.add_edge("Assistant", END)
+
         return workflow
 
     # ---------- Public Run ----------
-    def run(self, query: str,thread_id: str = "default_thread") -> str:
+    def run(self, query: str, thread_id: str = "default_thread") -> str:
         """Run the workflow for a given query and return the final answer."""
         result = self.app.invoke({"messages": [HumanMessage(content=query)]},
                                  config={"configurable": {"thread_id": thread_id}})
         return result["messages"][-1].content
-    
-        # function call with be asscoiate
-        # you will get some score
-        # put condition behalf on that score
-        # if relevany>0.75
-            #return
-        #else:
-            #contine
 
 
 if __name__ == "__main__":
-    
-    
     rag_agent = AgenticRAG()
     answer = rag_agent.run("What is the price of iPhone 15?")
     print("\nFinal Answer:\n", answer)
-    
-    
-    # retrieved_contexts,response = invoke_chain(user_query)
-    
-    # #this is not an actual output this have been written to test the pipeline
-    # #response="iphone 16 plus, iphone 16, iphone 15 are best phones under 1,00,000 INR."
-    
-    # context_score = evaluate_context_precision(user_query,response,retrieved_contexts)
-    # relevancy_score = evaluate_response_relevancy(user_query,response,retrieved_contexts)
-    
-    # print("\n--- Evaluation Metrics ---")
-    # print("Context Precision Score:", context_score)
-    # print("Response Relevancy Score:", relevancy_score)
