@@ -70,7 +70,7 @@ def invoke_chain(query: str, debug: bool = False):
 
 
 if __name__=='__main__':
-    user_query = "Can you suggest good budget iPhone with good rating?"
+    user_query = "Can you suggest good budget iPhone under 1,00,000 INR?"
      
     #retriever_obj = Retriever()
     
