@@ -3,8 +3,8 @@ name: Deploy App to EKS
 on:
   push:
     branches:
-      - main   # Runs automatically on push to main branch
-  workflow_dispatch: # Allow manual trigger
+      - main
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -51,16 +51,48 @@ jobs:
         with:
           version: 'latest'
 
-      # Update kubeconfig for EKS (assumes cluster already exists)
-      - name: Update kubeconfig
-        run: |
-          aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ secrets.AWS_REGION }}
 
+      # Ensure AWS CLI is installed
+      - name: Install AWS CLI
+        run: |
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip -q awscliv2.zip
+          sudo ./aws/install --update
+          aws --version
+    
+      - name: Print Env Vars
+        run: |
+          echo "Region: ${{ secrets.AWS_REGION }}"
+          echo "Cluster: ${{ secrets.EKS_CLUSTER_NAME }}"
+
+      # Debug: Print AWS default region
+      - name: Print AWS region
+        run: |
+          echo "AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION"
+          echo "AWS_REGION=$AWS_REGION"    
+      
+      # Update kubeconfig
+      - name: Update kubeconfig with debug
+        run: |
+          aws eks update-kubeconfig \
+            --name $EKS_CLUSTER_NAME \
+            --region $AWS_REGION \
+            --debug
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          EKS_CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }}
+
+      # Debug: Show kubeconfig file
+      - name: Show kubeconfig
+        run: |
+          ls -la ~/.kube || true
+          cat ~/.kube/config || true
+      
       # Create/Update Kubernetes Secret (for API keys)
       - name: Create Kubernetes secret for API keys
         run: |
           kubectl create secret generic product-assistant-secrets \
-            --from-literal=GROQ_API_KEY=${{ secrets.GROQ_API_KEY }} \
+            --from-literal=GROQ_API_KEY=${{ secrets.OPENAI_API_KEY }} \
             --from-literal=GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }} \
             --from-literal=ASTRA_DB_API_ENDPOINT=${{ secrets.ASTRA_DB_API_ENDPOINT }} \
             --from-literal=ASTRA_DB_APPLICATION_TOKEN=${{ secrets.ASTRA_DB_APPLICATION_TOKEN }} \
@@ -76,5 +108,18 @@ jobs:
       # Verify rollout
       - name: Verify Deployment
         run: |
-          kubectl rollout status deployment/product-assistant
-          kubectl get svc product-assistant-service
+          set -e
+          if ! kubectl rollout status deployment/product-assistant --timeout=120s; then
+            echo "❌ Rollout failed, collecting debug info..."
+            kubectl describe deployment product-assistant || true
+            kubectl get pods -o wide || true
+            for pod in $(kubectl get pods -l app=product-assistant -o jsonpath='{.items[*].metadata.name}'); do
+              echo "--- Logs for pod: $pod ---"
+              kubectl logs $pod --all-containers --tail=100 || true
+            done
+            exit 1
+          fi
+
+      # Show Service details
+      - name: Get Service Info
+        run: kubectl get svc product-assistant-service -o wide
