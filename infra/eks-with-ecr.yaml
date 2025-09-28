@@ -4,7 +4,7 @@ Description: Standalone EKS Cluster with NodeGroup and ECR Repository
 Parameters:
   ClusterName:
     Type: String
-    Default: product-assistant-cluster-latest
+    Default: product-assistant-cluster
   NodeInstanceType:
     Type: String
     Default: t3.medium
