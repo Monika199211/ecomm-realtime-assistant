@@ -1,4 +1,4 @@
-ame: Provision Infra (EKS + ECR)
+name: Provision Infra (EKS + ECR)
 
 on:
   workflow_dispatch:   # manual trigger only
@@ -19,31 +19,11 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      # Check if EKS Cluster exists (but don't fail if it doesn't)
-      - name: Check if EKS Cluster exists
-        id: cluster-check
-        run: |
-          if aws eks describe-cluster --name product-assistant-cluster --region ${{ secrets.AWS_REGION }} 2>/dev/null; then
-            echo "✅ EKS Cluster already exists"
-            echo "cluster-exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "ℹ️  EKS Cluster not found - will create new one"
-            echo "cluster-exists=false" >> $GITHUB_OUTPUT
-          fi
-        continue-on-error: true
-
-      # Deploy CloudFormation Stack (this will create the cluster)
+      # Deploy CloudFormation Stack
       - name: Deploy CloudFormation Stack
         run: |
-          echo "🚀 Deploying infrastructure..."
           aws cloudformation deploy \
             --stack-name product-assistant-cluster \
             --template-file infra/eks-with-ecr.yaml \
             --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
             --region ${{ secrets.AWS_REGION }}
-
-      # Verify the cluster was created successfully
-      - name: Verify EKS cluster creation
-        run: |
-          echo "✅ Verifying cluster deployment..."
-          aws eks describe-cluster --name product-assistant-cluster --region ${{ secrets.AWS_REGION }} --query 'cluster.{Name:name,Status:status,Endpoint:endpoint}'
